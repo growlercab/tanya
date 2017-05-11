@@ -87,22 +87,22 @@ in
 }
 body
 {
-    size_t i = y.length;
+    size_t i;
     auto tmp1 = Integer(x, x.allocator);
     auto result = Integer(x.allocator);
+    bool firstBit;
 
-    if (x.length == 0 && i != 0)
+    if (x.size == 0 && y.size != 0)
     {
-        i = 0;
+        i = y.size;
     }
     else
     {
         result = 1;
     }
-    while (i)
+    while (i < y.size)
     {
-        --i;
-        for (ubyte mask = 0x01; mask; mask <<= 1)
+        for (uint mask = 0x01; mask != 0x10000000; mask <<= 1)
         {
             if (y.rep[i] & mask)
             {
@@ -113,6 +113,7 @@ body
             tmp1 *= tmp2;
             tmp1 %= z;
         }
+        ++i;
     }
     return result;
 }

@@ -20,25 +20,31 @@ import std.traits;
 import tanya.container.entry;
 import tanya.memory;
 
-private struct Range(Entry)
-    if (__traits(isSame, TemplateOf!Entry, SEntry))
+/**
+ * Forward range for the $(D_PSYMBOL SList).
+ *
+ * Params:
+ *  E = Element type.
+ */
+struct SRange(E)
 {
-    private alias T = typeof(E.content);
-    private alias E = CopyConstness!(Entry, Entry*);
+    private alias EntryPointer = CopyConstness!(E, SEntry!(Unqual!E)*);
 
-    private E* head;
+    private EntryPointer* head;
 
     invariant
     {
         assert(head !is null);
     }
 
-    private this(ref E head) @trusted
+    private this(ref EntryPointer head) @trusted
     {
         this.head = &head;
     }
 
-    @property Range save()
+    @disable this();
+
+    @property SRange save()
     {
         return this;
     }
@@ -53,7 +59,7 @@ private struct Range(Entry)
         return *head is null;
     }
 
-    @property ref inout(T) front() inout
+    @property ref inout(E) front() inout
     in
     {
         assert(!empty);
@@ -73,12 +79,12 @@ private struct Range(Entry)
         head = &(*head).next;
     }
 
-    Range opIndex()
+    SRange opIndex()
     {
         return typeof(return)(*head);
     }
 
-    Range!(const Entry) opIndex() const
+    SRange!(const E) opIndex() const
     {
         return typeof(return)(*head);
     }
@@ -209,16 +215,19 @@ struct SList(T)
      * If $(D_PARAM init) is passed by reference, it will be copied.
      *
      * Params:
+     *  R         = Source list type.
      *  init      = Source list.
      *  allocator = Allocator.
      */
-    this(ref SList init, shared Allocator allocator = defaultAllocator)
+    this(R)(ref R init, shared Allocator allocator = defaultAllocator)
+        if (is(Unqual!R == SList))
     {
         this(init[], allocator);
     }
 
     /// Ditto.
-    this(SList init, shared Allocator allocator = defaultAllocator) @trusted
+    this(R)(R init, shared Allocator allocator = defaultAllocator) @trusted
+        if (is(R == SList))
     {
         this(allocator);
         if (allocator is init.allocator)
@@ -334,17 +343,18 @@ struct SList(T)
      *
      * Returns: The number of elements inserted.
      */
-    size_t insertFront(ref T el) @trusted
-    {
-        head = allocator.make!Entry(el, head);
-        return 1;
-    }
-
-    /// Ditto.
     size_t insertFront(R)(R el)
         if (isImplicitlyConvertible!(R, T))
     {
         return moveEntry(head, el);
+    }
+
+    /// Ditto.
+    size_t insertFront(R)(ref R el) @trusted
+        if (isImplicitlyConvertible!(R, T))
+    {
+        head = allocator.make!Entry(el, head);
+        return 1;
     }
 
     /// Ditto.
@@ -407,7 +417,7 @@ struct SList(T)
 
     version (assert)
     {
-        private bool checkRangeBelonging(ref Range!Entry r) const
+        private bool checkRangeBelonging(ref SRange!T r) const
         {
             const(Entry*)* pos;
             for (pos = &head; pos != r.head && *pos !is null; pos = &(*pos).next)
@@ -422,35 +432,14 @@ struct SList(T)
      *
      * Params:
      *  R  = Type of the inserted value(s).
+     *  r  = Range extracted from this list.
      *  el = New element(s).
      *
      * Returns: The number of elements inserted.
      *
      * Precondition: $(D_PARAM r) is extracted from this list.
      */
-    size_t insertBefore(Range!Entry r, ref T el) @trusted
-    in
-    {
-        assert(checkRangeBelonging(r));
-    }
-    body
-    {
-        *r.head = allocator.make!Entry(el, *r.head);
-        return 1;
-    }
-
-    ///
-    @safe @nogc unittest
-    {
-        auto l1 = SList!int([234, 5, 1]);
-        auto l2 = SList!int([5, 1]);
-        int var = 234;
-        l2.insertBefore(l2[], var);
-        assert(l1 == l2);
-    }
-
-    /// Ditto.
-    size_t insertBefore(R)(Range!Entry r, R el)
+    size_t insertBefore(R)(SRange!T r, R el)
         if (isImplicitlyConvertible!(R, T))
     in
     {
@@ -471,7 +460,7 @@ struct SList(T)
     }
 
     /// Ditto.
-    size_t insertBefore(R)(Range!Entry r, R el)
+    size_t insertBefore(R)(SRange!T r, R el)
         if (!isInfinite!R
          && isInputRange!R
          && isImplicitlyConvertible!(ElementType!R, T))
@@ -503,7 +492,40 @@ struct SList(T)
     }
 
     /// Ditto.
-    size_t insertBefore(size_t R)(Range!Entry r, T[R] el)
+    size_t insertBefore(SRange!T r, ref T el) @trusted
+    in
+    {
+        assert(checkRangeBelonging(r));
+    }
+    body
+    {
+        *r.head = allocator.make!Entry(el, *r.head);
+        return 1;
+    }
+
+    ///
+    @safe @nogc unittest
+    {
+        auto l1 = SList!int([234, 5, 1]);
+        auto l2 = SList!int([5, 1]);
+        int var = 234;
+        l2.insertBefore(l2[], var);
+        assert(l1 == l2);
+    }
+
+    /**
+     * Inserts elements from a static array before $(D_PARAM r).
+     *
+     * Params:
+     *  R  = Static array size.
+     *  r  = Range extracted from this list.
+     *  el = New elements.
+     *
+     * Returns: The number of elements inserted.
+     *
+     * Precondition: $(D_PARAM r) is extracted from this list.
+     */
+    size_t insertBefore(size_t R)(SRange!T r, T[R] el)
     {
         return insertFront!(T[])(el[]);
     }
@@ -658,7 +680,7 @@ struct SList(T)
      *
      * Precondition: $(D_PARAM r) is extracted from this list.
      */
-    Range!Entry remove(Range!Entry r)
+    SRange!T remove(SRange!T r)
     in
     {
         assert(checkRangeBelonging(r));
@@ -686,74 +708,16 @@ struct SList(T)
     }
 
     /**
-     * $(D_KEYWORD foreach) iteration.
-     *
-     * Params:
-     *  dg = $(D_KEYWORD foreach) body.
-     *
-     * Returns: The value returned from $(D_PARAM dg).
-     */
-    int opApply(scope int delegate(ref size_t i, ref T) @nogc dg)
-    {
-        int result;
-        size_t i;
-
-        for (auto pos = head; pos; pos = pos.next, ++i)
-        {
-            result = dg(i, pos.content);
-
-            if (result != 0)
-            {
-                return result;
-            }
-        }
-        return result;
-    }
-
-    /// Ditto.
-    int opApply(scope int delegate(ref T) @nogc dg)
-    {
-        int result;
-
-        for (auto pos = head; pos; pos = pos.next)
-        {
-            result = dg(pos.content);
-
-            if (result != 0)
-            {
-                return result;
-            }
-        }
-        return result;
-    }
-
-    ///
-    @nogc unittest
-    {
-        SList!int l;
-
-        l.insertFront(5);
-        l.insertFront(4);
-        l.insertFront(9);
-        foreach (i, e; l)
-        {
-            assert(i != 0 || e == 9);
-            assert(i != 1 || e == 4);
-            assert(i != 2 || e == 5);
-        }
-    }
-
-    /**
      * Returns: Range that iterates over all elements of the container, in
      *          forward order.
      */
-    Range!Entry opIndex()
+    SRange!T opIndex()
     {
         return typeof(return)(head);
     }
 
     /// Ditto.
-    Range!(const Entry) opIndex() const
+    SRange!(const T) opIndex() const
     {
         return typeof(return)(head);
     }
@@ -773,18 +737,19 @@ struct SList(T)
      *
      * Returns: $(D_KEYWORD this).
      */
-    ref typeof(this) opAssign(R)(const ref R that)
+    ref typeof(this) opAssign(R)(ref R that)
         if (is(Unqual!R == SList))
     {
         return this = that[];
     }
 
     /// Ditto.
-    ref typeof(this) opAssign(R)(const ref R that)
-        if (is(Unqual!R == SList))
+    ref typeof(this) opAssign(R)(R that)
+        if (is(R == SList))
     {
         swap(this.head, that.head);
         swap(this.allocator_, that.allocator_);
+        return this;
     }
 
     /**
@@ -815,7 +780,7 @@ struct SList(T)
             }
             next = &(*next).next;
         }
-        remove(Range!Entry(*next));
+        remove(SRange!T(*next));
 
         return this;
     }
@@ -881,4 +846,22 @@ struct SList(T)
     {
     }
     static assert(is(SList!Stuff));
+}
+
+// foreach called using opIndex().
+private @nogc @safe unittest
+{
+    SList!int l;
+    size_t i;
+
+    l.insertFront(5);
+    l.insertFront(4);
+    l.insertFront(9);
+    foreach (e; l)
+    {
+        assert(i != 0 || e == 9);
+        assert(i != 1 || e == 4);
+        assert(i != 2 || e == 5);
+        ++i;
+    }
 }

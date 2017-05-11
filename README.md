@@ -1,6 +1,7 @@
 # Tanya
 
-[![Build Status](https://travis-ci.org/caraus-ecms/tanya.svg?branch=master)](https://travis-ci.org/caraus-ecms/tanya)
+[![Build status](https://travis-ci.org/caraus-ecms/tanya.svg?branch=master)](https://travis-ci.org/caraus-ecms/tanya)
+[![Build status](https://ci.appveyor.com/api/projects/status/djkmverdfsylc7ti/branch/master?svg=true)](https://ci.appveyor.com/project/belka-ew/tanya/branch/master)
 [![Dub version](https://img.shields.io/dub/v/tanya.svg)](https://code.dlang.org/packages/tanya)
 [![Dub downloads](https://img.shields.io/dub/dt/tanya.svg)](https://code.dlang.org/packages/tanya)
 [![License](https://img.shields.io/badge/license-MPL_2.0-blue.svg)](https://raw.githubusercontent.com/caraus-ecms/tanya/master/LICENSE)
@@ -21,32 +22,34 @@ data structures and utilities that depend on the Garbage Collector in Phobos.
 Tanya consists of the following packages:
 
 * `async`: Event loop (epoll, kqueue and IOCP).
-* `container`: Queue, Vector, Singly linked list, buffers.
+* `container`: Queue, Vector, Singly linked list, buffers, UTF-8 string.
+* `crypto`: HMAC.
 * `math`: Arbitrary precision integer and a set of functions.
 * `memory`: Tools for manual memory management (allocator, reference counting,
 helper functions).
-* `network`: URL-Parsing, sockets.
+* `network`: URL-Parsing, sockets, utilities.
 
 ### Supported compilers
 
-* dmd 2.073.0
-* dmd 2.072.2
-* dmd 2.071.2
-* dmd 2.070.2
+| dmd     |
+|:-------:|
+| 2.074.0 |
+| 2.073.2 |
+| 2.072.2 |
+| 2.071.2 |
 
 ### Current status
 
 The library is currently under development, but the API is becoming gradually
 stable.
 
-`container`s are being extended to support ranges. Also following modules are
-coming soon:
-* UTF-8 string.
-* Hash table.
+Following modules are coming soon:
 
-`math` package contains an arbitrary precision integer implementation that
-needs more test cases, better performance and some additional features
-(constructing from a string and an ubyte array, and converting it back).
+| Feature      | Branch    | Build status                                                                                                          |
+|--------------|:---------:|:---------------------------------------------------------------------------------------------------------------------:|
+| BitVector    | bitvector | [![bitvector](https://travis-ci.org/caraus-ecms/tanya.svg?branch=bitvector)](https://travis-ci.org/caraus-ecms/tanya) [![bitvector](https://ci.appveyor.com/api/projects/status/djkmverdfsylc7ti/branch/bitvector?svg=true)](https://ci.appveyor.com/project/belka-ew/tanya/branch/bitvector) |
+| TLS          | crypto    | [![crypto](https://travis-ci.org/caraus-ecms/tanya.svg?branch=crypto)](https://travis-ci.org/caraus-ecms/tanya) [![crypto](https://ci.appveyor.com/api/projects/status/djkmverdfsylc7ti/branch/crypto?svg=true)](https://ci.appveyor.com/project/belka-ew/tanya/branch/crypto)             |
+| File IO      | io        | [![io](https://travis-ci.org/caraus-ecms/tanya.svg?branch=io)](https://travis-ci.org/caraus-ecms/tanya) [![io](https://ci.appveyor.com/api/projects/status/djkmverdfsylc7ti/branch/io?svg=true)](https://ci.appveyor.com/project/belka-ew/tanya/branch/io)                             |
 
 ### Further characteristics
 
@@ -56,6 +59,10 @@ needs more test cases, better performance and some additional features
 is being tested on Windows and FreeBSD as well.
 
 * The library isn't thread-safe. Thread-safity should be added later.
+
+## Release management
+
+4-week release cycle.
 
 ## Contributing
 
