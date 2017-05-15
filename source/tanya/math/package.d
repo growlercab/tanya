@@ -12,6 +12,7 @@ module tanya.math;
 
 import std.traits;
 public import tanya.math.mp;
+public import tanya.math.nbtheory;
 public import tanya.math.random;
 
 version (unittest)
