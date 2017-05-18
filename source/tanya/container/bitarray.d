@@ -10,14 +10,14 @@
  *                  Mozilla Public License, v. 2.0).
  * Authors: $(LINK2 mailto:info@caraus.de, Eugene Wissner)
  */
-module tanya.container.bitvector;
+module tanya.container.bitarray;
 
 import tanya.memory;
 
 /**
  * Single-dimensioned bit array.
  */
-struct BitVector
+struct BitArray
 {
     private size_t length_;
     private ubyte* data;
@@ -54,12 +54,12 @@ struct BitVector
     {
         ubyte[5] array1 = [234, 3, 252, 10, 18];
         ubyte[3] array2 = [65, 13, 173];
-        auto bits = BitVector(array1);
+        auto bits = BitArray(array1);
 
         assert(bits.get() is array1);
         assert(bits.get() !is array2);
 
-        bits = BitVector(array2);
+        bits = BitArray(array2);
         assert(bits.get() is array2);
     }
 
@@ -101,7 +101,7 @@ struct BitVector
     {
         // [01000001, 00001101, 10101101]
         ubyte[3] arr = [65, 13, 173];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
 
         assert(bits.length == 24);
     }
@@ -128,7 +128,7 @@ struct BitVector
     {
         // [01000001, 00001101, 10101101]
         ubyte[3] arr = [65, 13, 173];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
 
         assert(!bits[0]);
         assert(bits[1]);
@@ -159,7 +159,7 @@ struct BitVector
     {
         // [01000001, 00001101, 10101101]
         ubyte[3] arr = [65, 13, 173];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
 
         assert(bits.get() is arr);
     }
@@ -195,7 +195,7 @@ struct BitVector
     {
         // [01000001, 00001101, 10101101]
         ubyte[3] arr = [65, 13, 173];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
 
         bits[5] = bits[6] = true;
         assert(bits.get()[0] == 71);
@@ -209,10 +209,10 @@ struct BitVector
     }
 
     /**
-     * Copies bits from $(D_PARAM vector) into this $(D_PSYMBOL BitVector).
+     * Copies bits from $(D_PARAM vector) into this $(D_PSYMBOL BitArray).
      *
      * The array that should be assigned, can be smaller (but not larger) than
-     * the underlying array of this $(D_PSYMBOL BitVector), leading zeros will
+     * the underlying array of this $(D_PSYMBOL BitArray), leading zeros will
      * be added in this case to the left.
      *
      * Params:
@@ -221,7 +221,7 @@ struct BitVector
      *
      * Returns: $(D_KEYWORD this).
      */
-    BitVector opAssign(ubyte[] vector) pure nothrow @trusted @nogc
+    BitArray opAssign(ubyte[] vector) pure nothrow @trusted @nogc
     in
     {
         assert(vector.length <= this.capacity_);
@@ -242,7 +242,7 @@ struct BitVector
     {
         ubyte[5] array1 = [234, 3, 252, 10, 18];
         ubyte[3] array2 = [65, 13, 173];
-        auto bits = BitVector(array1);
+        auto bits = BitArray(array1);
 
         bits = array2;
         assert(bits.get()[0] == 0);
@@ -267,14 +267,14 @@ struct BitVector
      *
      * Returns: $(D_KEYWORD this).
      */
-    BitVector opOpAssign(string op)(BitVector that) pure nothrow @safe @nogc
+    BitArray opOpAssign(string op)(BitArray that) pure nothrow @safe @nogc
         if ((op == "^") || (op == "|") || (op == "&"))
     {
         return opOpAssign(op)(that.data[0 .. that.capacity_]);
     }
 
     /// Ditto.
-    BitVector opOpAssign(string op)(ubyte[] that) pure nothrow @trusted @nogc
+    BitArray opOpAssign(string op)(ubyte[] that) pure nothrow @trusted @nogc
         if ((op == "^") || (op == "|") || (op == "&"))
     in
     {
@@ -303,7 +303,7 @@ struct BitVector
         // [01000001, 00001101, 10101101]
         ubyte[3] array1 = [65, 13, 173];
         ubyte[3] array2 = [0b01010010, 0b10111110, 0b10111110];
-        auto bits = BitVector(array1);
+        auto bits = BitArray(array1);
 
         bits |= array2;
         assert(bits.get()[0] == 0b01010011);
@@ -329,7 +329,7 @@ struct BitVector
      *
      * Returns: $(D_KEYWORD this).
      */
-    BitVector opOpAssign(string op)(in size_t n) pure nothrow @trusted @nogc
+    BitArray opOpAssign(string op)(in size_t n) pure nothrow @trusted @nogc
         if ((op == "<<") || (op == ">>"))
     {
         if (n >= length)
@@ -369,7 +369,7 @@ struct BitVector
     private nothrow @safe @nogc unittest
     {
         ubyte[4] arr = [0b10111110, 0b11110010, 0b01010010, 0b01010011];
-        auto bits = BitVector(arr);
+        auto bits = BitArray (arr);
 
         bits <<= 0;
         assert(bits.get()[0] == 0b10111110 && bits.get()[1] == 0b11110010
@@ -458,7 +458,7 @@ struct BitVector
      *
      * Returns: $(D_KEYWORD this).
      */
-    BitVector opUnary(string op)() @trusted
+    BitArray opUnary(string op)() @trusted
         if (op == "~")
     {
         foreach (ref b; this.data[0 .. this.capacity_])
@@ -473,7 +473,7 @@ struct BitVector
     {
         // [01000001, 00001101, 10101101]
         ubyte[3] arr = [65, 13, 173];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
 
         ~bits;
         assert(bits.get()[0] == 0b10111110);
@@ -528,7 +528,7 @@ struct BitVector
     unittest
     {
         ubyte[2] arr = [0b01000001, 0b00001101];
-        auto bits = BitVector(arr);
+        auto bits = BitArray(arr);
         size_t c;
 
         foreach (i, v; bits)

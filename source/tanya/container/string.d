@@ -199,7 +199,12 @@ struct ByCodeUnit(E)
         return typeof(return)(*this.container, this.begin + i, this.begin + j);
     }
 
-    inout(E[]) get() inout @trusted
+    const(E)[] toString() const @trusted
+    {
+        return this.begin[0 .. length];
+    }
+
+    E[] toString() @trusted
     {
         return this.begin[0 .. length];
     }
@@ -370,14 +375,14 @@ struct String
     @safe @nogc unittest
     {
         auto s = String("\u10437"w);
-        assert("\u10437" == s.get());
+        assert(s == "\u10437");
     }
 
     ///
     @safe @nogc unittest
     {
         auto s = String("Отказаться от вина - в этом страшная вина."d);
-        assert("Отказаться от вина - в этом страшная вина." == s.get());
+        assert(s == "Отказаться от вина - в этом страшная вина.");
     }
 
     /**
@@ -942,9 +947,36 @@ struct String
      *
      * Returns: The array representing the string.
      */
-    inout(char[]) get() inout pure nothrow @trusted @nogc
+    const(char)[] toString() const pure nothrow @trusted @nogc
     {
         return this.data[0 .. this.length_];
+    }
+
+    /// Ditto.
+    char[] toString() pure nothrow @trusted @nogc
+    {
+        return this.data[0 .. this.length_];
+    }
+
+    /**
+     * Returns null-terminated string. The returned string is managed by this
+     * object and shouldn't be freed.
+     *
+     * Returns: Null-terminated string.
+     */
+    const(char)[] toStringz() nothrow @trusted @nogc
+    {
+        reserve(length + 1);
+        this.data[length] = '\0';
+        return this.data[0 .. length + 1];
+    }
+
+    ///
+    @safe @nogc unittest
+    {
+        auto s = String("C string.");
+        assert(s.toStringz().length == 10);
+        assert(s.toStringz()[$ - 1] == '\0');
     }
 
     /**
@@ -1355,6 +1387,129 @@ struct String
     ByCodeUnit!char opIndexAssign(const char[] value) pure nothrow @safe @nogc
     {
         return opSliceAssign(value, 0, length);
+    }
+
+    /**
+     * Remove all characters beloning to $(D_PARAM r).
+     *
+     * Params:
+     *  R = $(D_PSYMBOL ByCodeUnit) or $(D_PSYMBOL ByCodePoint).
+     *  r = Range originally obtained from this string.
+     *
+     * Returns: A range spanning the remaining characters in the string that
+     *          initially were right after $(D_PARAM r).
+     *
+     * Precondition: $(D_PARAM r) refers to a region of $(D_KEYWORD this).
+     */
+    R remove(R)(R r) @trusted
+        if (is(R == ByCodeUnit!char) || is(R == ByCodePoint!char))
+    in
+    {
+        assert(r.container is &this);
+        assert(r.begin >= this.data);
+        assert(r.end <= this.data + length);
+    }
+    body
+    {
+        auto end = this.data + this.length;
+        copy(ByCodeUnit!char(this, r.end, end), ByCodeUnit!char(this, r.begin, end));
+        this.length_ = length - (r.end - r.begin);
+        return R(this, r.begin, this.data + length);
+    }
+
+    ///
+    @nogc @safe unittest
+    {
+        auto s = String("Из пословицы слова не выкинешь.");
+
+        assert(s.remove(s[5 .. 24]).length == 33);
+        assert(s == "Из слова не выкинешь.");
+        assert(s.length == 38);
+
+        auto byCodePoint = s.byCodePoint();
+        byCodePoint.popFrontN(8);
+
+        assert(s.remove(byCodePoint).count == 0);
+        assert(s == "Из слова");
+
+        assert(s.remove(s[]).length == 0);
+        assert(s.length == 0);
+
+        assert(s.remove(s[]).length == 0);
+    }
+
+    /**
+     * Inserts $(D_PARAM el) before or after $(D_PARAM r).
+     *
+     * Params:
+     *  R = $(D_PSYMBOL ByCodeUnit) or $(D_PSYMBOL ByCodePoint).
+     *  T  = Stringish type.
+     *  r  = Range originally obtained from this string.
+     *  el = Value(s) should be inserted.
+     *
+     * Returns: The number of elements inserted.
+     *
+     * Precondition: $(D_PARAM r) refers to a region of $(D_KEYWORD this).
+     */
+    size_t insertAfter(T, R)(R r, T el) @trusted
+        if ((isSomeChar!T || (!isInfinite!T
+         && isInputRange!T
+         && isSomeChar!(ElementEncodingType!T)))
+         && (is(R == ByCodeUnit!char) || is(R == ByCodePoint!char)))
+    in
+    {
+        assert(r.container is &this);
+        assert(r.begin >= this.data);
+        assert(r.end <= this.data + length);
+    }
+    body
+    {
+        auto oldLen = this.data + length;
+        const inserted = insertBack(el);
+        bringToFront(ByCodeUnit!char(this, r.end, oldLen),
+                     ByCodeUnit!char(this, oldLen, this.data + length));
+        return inserted;
+    }
+
+    ///
+    @safe @nogc unittest
+    {
+        auto s = String("Казнить нельзя помиловать.");
+        s.insertAfter(s[0 .. 27], ",");
+        assert(s == "Казнить нельзя, помиловать.");
+
+        s = String("Казнить нельзя помиловать.");
+        s.insertAfter(s[0 .. 14], ',');
+        assert(s == "Казнить, нельзя помиловать.");
+    }
+
+    ///
+    size_t insertBefore(T, R)(R r, T el) @trusted
+        if ((isSomeChar!T || (!isInfinite!T
+         && isInputRange!T
+         && isSomeChar!(ElementEncodingType!T)))
+         && (is(R == ByCodeUnit!char) || is(R == ByCodePoint!char)))
+    in
+    {
+        assert(r.container is &this);
+        assert(r.begin >= this.data);
+        assert(r.end <= this.data + length);
+    }
+    body
+    {
+        return insertAfter(R(this, this.data, r.begin), el);
+    }
+
+    ///
+    @safe @nogc unittest
+    {
+        auto s = String("Казнить нельзя помиловать.");
+        s.insertBefore(s[27 .. $], ",");
+        assert(s == "Казнить нельзя, помиловать.");
+
+        s = String("Казнить нельзя помиловать.");
+        s.insertBefore(s[14 .. $], ',');
+        assert(s == "Казнить, нельзя помиловать.");
     }
 
     mixin DefaultAllocator;

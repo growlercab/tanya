@@ -18,7 +18,19 @@ import std.range;
 import std.traits;
 import tanya.memory;
 
-package(tanya) final class RefCountedStore(T)
+private template Payload(T)
+{
+    static if (is(T == class) || is(T == interface) || isArray!T)
+    {
+        alias Payload = T;
+    }
+    else
+    {
+        alias Payload = T*;
+    }
+}
+
+final class RefCountedStore(T)
 {
     T payload;
     size_t counter = 1;
@@ -34,7 +46,7 @@ package(tanya) final class RefCountedStore(T)
         mixin("return " ~ op ~ "counter;");
     }
 
-    int opCmp(size_t counter)
+    int opCmp(const size_t counter)
     {
         if (this.counter > counter)
         {
@@ -50,7 +62,7 @@ package(tanya) final class RefCountedStore(T)
         }
     }
 
-    int opEquals(size_t counter)
+    int opEquals(const size_t counter)
     {
         return this.counter == counter;
     }
@@ -81,15 +93,7 @@ private void unifiedDeleter(T)(RefCountedStore!T storage,
  */
 struct RefCounted(T)
 {
-    static if (is(T == class) || is(T == interface) || isArray!T)
-    {
-        private alias Payload = T;
-    }
-    else
-    {
-        private alias Payload = T*;
-    }
-    private alias Storage = RefCountedStore!Payload;
+    private alias Storage = RefCountedStore!(Payload!T);
 
     private Storage storage;
     private void function(Storage storage,
@@ -112,13 +116,18 @@ struct RefCounted(T)
      *
      * Precondition: $(D_INLINECODE allocator !is null)
      */
-    this()(auto ref Payload value,
+    this()(auto ref Payload!T value,
            shared Allocator allocator = defaultAllocator)
     {
         this(allocator);
         this.storage = allocator.make!Storage();
-        this.deleter = &separateDeleter!Payload;
+        this.deleter = &separateDeleter!(Payload!T);
+
         move(value, this.storage.payload);
+        static if (__traits(isRef, value))
+        {
+            value = null;
+        }
     }
 
     /// Ditto.
@@ -139,7 +148,7 @@ struct RefCounted(T)
     {
         if (count != 0)
         {
-            ++storage;
+            ++this.storage;
         }
     }
 
@@ -152,7 +161,7 @@ struct RefCounted(T)
     {
         if (this.storage !is null && !(this.storage.counter && --this.storage))
         {
-            deleter(storage, allocator);
+            deleter(this.storage, allocator);
         }
     }
 
@@ -163,34 +172,34 @@ struct RefCounted(T)
      * If it is the last reference of the previously owned object,
      * it will be destroyed.
      *
-     * To reset the $(D_PSYMBOL RefCounted) assign $(D_KEYWORD null).
+     * To reset $(D_PSYMBOL RefCounted) assign $(D_KEYWORD null).
      *
      * If the allocator wasn't set before, $(D_PSYMBOL defaultAllocator) will
      * be used. If you need a different allocator, create a new
      * $(D_PSYMBOL RefCounted) and assign it.
      *
      * Params:
-     *  rhs = $(D_KEYWORD this).
+     *  rhs = New object.
+     *
+     * Returns: $(D_KEYWORD this).
      */
-    ref typeof(this) opAssign()(auto ref Payload rhs)
+    ref typeof(this) opAssign()(auto ref Payload!T rhs)
     {
         if (this.storage is null)
         {
             this.storage = allocator.make!Storage();
-            this.deleter = &separateDeleter!Payload;
+            this.deleter = &separateDeleter!(Payload!T);
         }
         else if (this.storage > 1)
         {
             --this.storage;
             this.storage = allocator.make!Storage();
-            this.deleter = &separateDeleter!Payload;
+            this.deleter = &separateDeleter!(Payload!T);
         }
         else
         {
-            // Created with refCounted. Always destroyed togethter with the pointer.
-            assert(this.storage.counter != 0);
             finalize(this.storage.payload);
-            this.storage.payload = Payload.init;
+            this.storage.payload = Payload!T.init;
         }
         move(rhs, this.storage.payload);
         return this;
@@ -206,15 +215,13 @@ struct RefCounted(T)
         else if (this.storage > 1)
         {
             --this.storage;
-            this.storage = null;
         }
         else
         {
-            // Created with refCounted. Always destroyed togethter with the pointer.
-            assert(this.storage.counter != 0);
-            finalize(this.storage.payload);
-            this.storage.payload = Payload.init;
+            deleter(this.storage, allocator);
         }
+        this.storage = null;
+
         return this;
     }
 
@@ -229,8 +236,10 @@ struct RefCounted(T)
 
     /**
      * Returns: Reference to the owned object.
+     *
+     * Precondition: $(D_INLINECODE cound > 0).
      */
-    inout(Payload) get() inout pure nothrow @safe @nogc
+    Payload!T get() pure nothrow @safe @nogc
     in
     {
         assert(count > 0, "Attempted to access an uninitialized reference.");
@@ -240,7 +249,7 @@ struct RefCounted(T)
         return storage.payload;
     }
 
-    static if (isPointer!Payload)
+    version (D_Ddoc)
     {
         /**
          * Params:
@@ -251,6 +260,11 @@ struct RefCounted(T)
          *
          * Returns: Reference to the pointed value.
          */
+        ref T opUnary(string op)()
+            if (op == "*");
+    }
+    else static if (isPointer!(Payload!T))
+    {
         ref T opUnary(string op)()
             if (op == "*")
         {
@@ -354,6 +368,44 @@ private unittest
 
 private unittest
 {
+    auto rc = defaultAllocator.refCounted!int(5);
+    assert(rc.count == 1);
+
+    void func(RefCounted!int rc)
+    {
+        assert(rc.count == 2);
+        rc = null;
+        assert(!rc.isInitialized);
+        assert(rc.count == 0);
+    }
+
+    assert(rc.count == 1);
+    func(rc);
+    assert(rc.count == 1);
+
+    rc = null;
+    assert(!rc.isInitialized);
+    assert(rc.count == 0);
+}
+
+private unittest
+{
+    auto rc = defaultAllocator.refCounted!int(5);
+    assert(*rc == 5);
+
+    void func(RefCounted!int rc)
+    {
+        assert(rc.count == 2);
+        rc = defaultAllocator.refCounted!int(4);
+        assert(*rc == 4);
+        assert(rc.count == 1);
+    }
+    func(rc);
+    assert(*rc == 5);
+}
+
+private unittest
+{
     static assert(is(typeof(RefCounted!int.storage.payload) == int*));
     static assert(is(typeof(RefCounted!A.storage.payload) == A));
 
@@ -414,13 +466,13 @@ body
         auto ptr = (() @trusted => (cast(T*) mem[storageSize .. $].ptr))();
         rc.storage.payload = emplace!T(ptr, args);
     }
-    rc.deleter = &unifiedDeleter!(RefCounted!T.Payload);
+    rc.deleter = &unifiedDeleter!(Payload!T);
     return rc;
 }
 
 /**
  * Constructs a new array with $(D_PARAM size) elements and wraps it in a
- * $(D_PSYMBOL RefCounted) using.
+ * $(D_PSYMBOL RefCounted).
  *
  * Params:
  *  T         = Array type.
@@ -432,7 +484,8 @@ body
  * Precondition: $(D_INLINECODE allocator !is null
  *                           && size <= size_t.max / ElementType!T.sizeof)
  */
- RefCounted!T refCounted(T)(shared Allocator allocator, const size_t size)
+RefCounted!T refCounted(T)(shared Allocator allocator, const size_t size)
+@trusted
     if (isArray!T)
 in
 {
@@ -441,8 +494,7 @@ in
 }
 body
 {
-    auto payload = cast(T) allocator.allocate(ElementType!T.sizeof * size);
-    initializeAll(payload);
+    auto payload = allocator.resize!(ElementType!T)(null, size);
     return RefCounted!T(payload, allocator);
 }
 
@@ -511,4 +563,250 @@ private @nogc unittest
         auto rc = defaultAllocator.refCounted!F();
     }
     assert(destroyed);
+}
+
+/**
+ * $(D_PSYMBOL Scoped) stores an object that gets destroyed at the end of its scope.
+ *
+ * Params:
+ *  T = Value type.
+ */
+struct Scoped(T)
+{
+    private Payload!T payload;
+
+    invariant
+    {
+        assert(payload is null || allocator_ !is null);
+    }
+
+    /**
+     * Takes ownership over $(D_PARAM value), setting the counter to 1.
+     * $(D_PARAM value) may be a pointer, an object or a dynamic array.
+     *
+     * Params:
+     *  value     = Value whose ownership is taken over.
+     *  allocator = Allocator used to destroy the $(D_PARAM value) and to
+     *              allocate/deallocate internal storage.
+     *
+     * Precondition: $(D_INLINECODE allocator !is null)
+     */
+    this()(auto ref Payload!T value,
+           shared Allocator allocator = defaultAllocator)
+    {
+        this(allocator);
+
+        move(value, this.payload);
+        static if (__traits(isRef, value))
+        {
+            value = null;
+        }
+    }
+
+    /// Ditto.
+    this(shared Allocator allocator)
+    in
+    {
+        assert(allocator !is null);
+    }
+    body
+    {
+        this.allocator_ = allocator;
+    }
+
+    /**
+     * $(D_PSYMBOL Scoped) is noncopyable.
+     */
+    @disable this(this);
+
+    /**
+     * Destroys the owned object.
+     */
+    ~this()
+    {
+        if (this.payload !is null)
+        {
+            allocator.dispose(this.payload);
+        }
+    }
+
+    /**
+     * Initialized this $(D_PARAM Scoped) and takes ownership over
+     * $(D_PARAM rhs).
+     *
+     * To reset $(D_PSYMBOL Scoped) assign $(D_KEYWORD null).
+     *
+     * If the allocator wasn't set before, $(D_PSYMBOL defaultAllocator) will
+     * be used. If you need a different allocator, create a new
+     * $(D_PSYMBOL Scoped) and assign it.
+     *
+     * Params:
+     *  rhs = New object.
+     *
+     * Returns: $(D_KEYWORD this).
+     */
+    ref typeof(this) opAssign()(auto ref Payload!T rhs)
+    {
+        allocator.dispose(this.payload);
+        move(rhs, this.payload);
+
+        return this;
+    }
+
+    /// Ditto.
+    ref typeof(this) opAssign(typeof(null))
+    {
+        allocator.dispose(this.payload);
+        return this;
+    }
+
+    /// Ditto.
+    ref typeof(this) opAssign(typeof(this) rhs)
+    {
+        swap(this.allocator_, rhs.allocator_);
+        swap(this.payload, rhs.payload);
+
+        return this;
+    }
+
+    /**
+     * Returns: Reference to the owned object.
+     */
+    Payload!T get() pure nothrow @safe @nogc
+    {
+        return payload;
+    }
+
+    version (D_Ddoc)
+    {
+        /**
+         * Params:
+         *  op = Operation. 
+         *
+         * Dereferences the pointer. It is defined only for pointers, not for
+         * reference types like classes, that can be accessed directly.
+         *
+         * Returns: Reference to the pointed value.
+         */
+        ref T opUnary(string op)()
+            if (op == "*");
+    }
+    else static if (isPointer!(Payload!T))
+    {
+        ref T opUnary(string op)()
+            if (op == "*")
+        {
+            return *payload;
+        }
+    }
+
+    mixin DefaultAllocator;
+    alias get this;
+}
+
+///
+@nogc unittest
+{
+    auto p = defaultAllocator.make!int(5);
+    auto s = Scoped!int(p, defaultAllocator);
+    assert(p is null);
+    assert(*s == 5);
+}
+
+///
+@nogc unittest
+{
+    static bool destroyed = false;
+
+    struct F
+    {
+        ~this() @nogc
+        {
+            destroyed = true;
+        }
+    }
+    {
+        auto s = Scoped!F(defaultAllocator.make!F(), defaultAllocator);
+    }
+    assert(destroyed);
+}
+
+/**
+ * Constructs a new object of type $(D_PARAM T) and wraps it in a
+ * $(D_PSYMBOL Scoped) using $(D_PARAM args) as the parameter list for
+ * the constructor of $(D_PARAM T).
+ *
+ * Params:
+ *  T         = Type of the constructed object.
+ *  A         = Types of the arguments to the constructor of $(D_PARAM T).
+ *  allocator = Allocator.
+ *  args      = Constructor arguments of $(D_PARAM T).
+ * 
+ * Returns: Newly created $(D_PSYMBOL Scoped!T).
+ *
+ * Precondition: $(D_INLINECODE allocator !is null)
+ */
+Scoped!T scoped(T, A...)(shared Allocator allocator, auto ref A args)
+    if (!is(T == interface) && !isAbstractClass!T
+     && !isAssociativeArray!T && !isArray!T)
+in
+{
+    assert(allocator !is null);
+}
+body
+{
+    auto payload = allocator.make!(T, shared Allocator, A)(args);
+    return Scoped!T(payload, allocator);
+}
+
+/**
+ * Constructs a new array with $(D_PARAM size) elements and wraps it in a
+ * $(D_PSYMBOL Scoped).
+ *
+ * Params:
+ *  T         = Array type.
+ *  size      = Array size.
+ *  allocator = Allocator.
+ *
+ * Returns: Newly created $(D_PSYMBOL Scoped!T).
+ *
+ * Precondition: $(D_INLINECODE allocator !is null
+ *                           && size <= size_t.max / ElementType!T.sizeof)
+ */
+Scoped!T scoped(T)(shared Allocator allocator, const size_t size)
+@trusted
+    if (isArray!T)
+in
+{
+    assert(allocator !is null);
+    assert(size <= size_t.max / ElementType!T.sizeof);
+}
+body
+{
+    auto payload = allocator.resize!(ElementType!T)(null, size);
+    return Scoped!T(payload, allocator);
+}
+
+private unittest
+{
+    static assert(is(typeof(defaultAllocator.scoped!B(5))));
+    static assert(is(typeof(defaultAllocator.scoped!(int[])(5))));
+}
+
+private unittest
+{
+    auto s = defaultAllocator.scoped!int(5);
+    assert(*s == 5);
+
+    s = null;
+    assert(s is null);
+}
+
+private unittest
+{
+    auto s = defaultAllocator.scoped!int(5);
+    assert(*s == 5);
+
+    s = defaultAllocator.scoped!int(4);
+    assert(*s == 4);
 }
